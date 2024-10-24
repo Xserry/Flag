@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
+    <meta charset="viewport" content="width=device-width, initial-scale=1.0">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gra w odgadywanie flag</title>
+    <title>Gra w odgadywanie flag i stolic</title>
     <style>
         /* Globalne style */
         body {
@@ -15,6 +15,7 @@
             align-items: center;
             height: 100vh;
             margin: 0;
+            flex-direction: column; /* Ustawienie elementów w kolumnie */
             transition: background-color 0.3s, color 0.3s;
         }
         .dark-mode {
@@ -65,15 +66,16 @@
             width: 100%;
             padding: 12px;
             font-size: 16px;
-            background-color: #007bff;
+            background-color: #888;
             color: white;
             border: none;
-            border-radius: 8px;
+            border-radius: 25px;
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
         }
         button:hover {
-            background-color: #0056b3;
+            background-color: #555;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
         }
         #result {
             margin-top: 15px;
@@ -84,10 +86,10 @@
             margin-top: 10px;
             font-size: 16px;
         }
-        #next-btn, #restart-btn {
+        #next-btn, #restart-btn, #menu-btn {
             margin-top: 20px;
             padding: 12px;
-            display: none;
+            display: block;
         }
         #next-btn {
             background-color: #28a745;
@@ -101,22 +103,45 @@
         #restart-btn:hover {
             background-color: #c82333;
         }
-        /* Minimalistyczny przycisk zmiany motywu w rogu ekranu */
-        .theme-toggle {
-            position: fixed;
-            top: 10px;
-            right: 10px;
+        #menu-btn {
             background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 5px;
-            border-radius: 50%;
-            font-size: 14px;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
         }
-        .theme-toggle:hover {
+        #menu-btn:hover {
             background-color: #0056b3;
+        }
+
+        /* Styl dla animowanego suwaka do zmiany motywu umieszczonego nad kontenerem */
+        .theme-toggle {
+            margin-bottom: 10px; /* Odstęp nad kontenerem */
+        }
+        .theme-toggle input {
+            display: none;
+        }
+        .theme-toggle .slider {
+            width: 50px;
+            height: 25px;
+            background-color: #ccc;
+            border-radius: 50px;
+            position: relative;
+            transition: background-color 0.3s;
+        }
+        .theme-toggle .slider:before {
+            content: '☀️';
+            position: absolute;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background-color: #fff;
+            left: 0;
+            bottom: 0;
+            transition: all 0.3s;
+        }
+        input:checked + .slider {
+            background-color: #333;
+        }
+        input:checked + .slider:before {
+            transform: translateX(25px);
+            content: '🌙';
         }
         /* Menu początkowe */
         #menu {
@@ -142,11 +167,19 @@
     </style>
 </head>
 <body>
-    <button class="theme-toggle" onclick="toggleTheme()">🌓</button>
+    <!-- Przełącznik motywu umieszczony nad kontenerem gry i menu -->
+    <label class="theme-toggle">
+        <input type="checkbox" id="theme-switch" onchange="toggleTheme()">
+        <span class="slider"></span>
+    </label>
     
     <!-- Menu początkowe -->
     <div id="menu" class="container visible">
-        <h1>Wybierz region i rozpocznij grę</h1>
+        <h1>Wybierz tryb gry</h1>
+        <select id="game-mode-select">
+            <option value="flags">Zgadywanie flag</option>
+            <option value="capitals">Zgadywanie stolic</option>
+        </select>
         <select id="region-select">
             <option value="all">Cały świat</option>
             <option value="Africa">Afryka</option>
@@ -160,28 +193,34 @@
 
     <!-- Gra -->
     <div id="game" class="container">
-        <h1>Odgadnij flagę!</h1>
+        <h1 id="game-title">Odgadnij flagę!</h1>
         <div id="flag-container">
             <img id="flag" src="" alt="Flaga kraju">
         </div>
         <div>
             <!-- Kombinowane pole tekstowe i lista rozwijana -->
-            <input list="countries" id="country-input" placeholder="Wpisz lub wybierz nazwę kraju">
+            <input list="countries" id="country-input" placeholder="Wpisz lub wybierz nazwę">
             <datalist id="countries"></datalist>
         </div>
         <div id="result"></div>
         <div id="streak">Licznik poprawnych odpowiedzi z rzędu: 0</div> <!-- Licznik -->
-        <button id="next-btn" onclick="loadNewFlag()">Następna flaga</button>
-        <button id="restart-btn" onclick="restartGame()">Restartuj grę</button>
+        
+        <button id="next-btn" onclick="loadNewItem()">Następna runda</button>
+        <button id="restart-btn" onclick="restartCurrentGame()">Restartuj</button>
+        <button id="menu-btn" onclick="backToMenu()">Powrót do menu</button>
     </div>
 
     <script>
-        let flags = []; // Zmienna na pobrane flagi z API
-        let currentFlag;
-        let correctStreak = 0; // Licznik poprawnych odpowiedzi z rzędu
+        let flags = [];
+        let capitals = [];
+        let remainingItems = [];
+        let currentItem;
+        let correctStreak = 0;
+        let currentRegion = 'all';
+        let gameMode = 'flags'; // Domyślny tryb to "flagi"
 
-        // Funkcja do pobierania flag z API REST Countries
-        function fetchFlags(region = "all") {
+        // Funkcja do pobierania flag i stolic z API
+        function fetchItems(region = "all") {
             let url = 'https://restcountries.com/v3.1/all';
             if (region !== "all") {
                 url = `https://restcountries.com/v3.1/region/${region}`;
@@ -191,33 +230,50 @@
                 .then(response => response.json())
                 .then(data => {
                     flags = data.map(country => ({
-                        country: country.name.common, // Nazwa angielska
-                        flagUrl: country.flags.png // URL do flagi
+                        name: country.name.common, // Nazwa angielska
+                        imageUrl: country.flags.png // URL do flagi
                     }));
-                    populateCountryDatalist(); // Wypełnij listę krajów
-                    loadNewFlag(); // Załaduj pierwszą flagę po pobraniu
+                    capitals = data.map(country => ({
+                        name: country.capital ? country.capital[0] : 'Brak stolicy', // Stolica
+                        country: country.name.common, // Nazwa kraju
+                        imageUrl: country.flags.png // URL do flagi
+                    }));
+                    remainingItems = gameMode === 'flags' ? [...flags] : [...capitals];
+                    populateDatalist();
+                    loadNewItem();
                 })
-                .catch(error => {
-                    console.error('Błąd podczas pobierania flag:', error);
-                });
+                .catch(error => console.error('Błąd podczas pobierania danych:', error));
         }
 
-        // Funkcja do wypełniania listy krajów
-        function populateCountryDatalist() {
+        // Funkcja do wypełniania listy krajów lub stolic
+        function populateDatalist() {
             const datalist = document.getElementById('countries');
             datalist.innerHTML = ''; // Wyczyszczenie listy
-            flags.forEach(flag => {
+            remainingItems.forEach(item => {
                 const option = document.createElement('option');
-                option.value = flag.country;
+                option.value = gameMode === 'flags' ? item.name : item.name; // Tylko stolice bez nazw państw
                 datalist.appendChild(option);
             });
         }
 
-        // Funkcja do losowania i wyświetlania nowej flagi
-        function loadNewFlag() {
-            const randomIndex = Math.floor(Math.random() * flags.length);
-            currentFlag = flags[randomIndex];
-            document.getElementById('flag').src = currentFlag.flagUrl;
+        // Funkcja do losowania nowego elementu (flaga lub stolica)
+        function loadNewItem() {
+            if (remainingItems.length === 0) {
+                endGameWin();
+                return;
+            }
+
+            const randomIndex = Math.floor(Math.random() * remainingItems.length);
+            currentItem = remainingItems[randomIndex];
+            remainingItems.splice(randomIndex, 1); // Usuń wybrany element
+
+            document.getElementById('flag').src = currentItem.imageUrl;
+            document.getElementById('flag-container').style.display = 'block';
+
+            if (gameMode === 'capitals') {
+                document.getElementById('game-title').textContent = `Odgadnij stolicę: ${currentItem.country}`;
+            }
+
             document.getElementById('country-input').value = ''; // Reset pola tekstowego
             document.getElementById('result').textContent = '';
             document.getElementById('next-btn').style.display = 'none';
@@ -226,62 +282,66 @@
         // Funkcja do aktualizacji licznika poprawnych odpowiedzi
         function updateStreak(isCorrect) {
             const streakDisplay = document.getElementById('streak');
-            if (isCorrect) {
-                correctStreak++; // Zwiększ licznik
-            } else {
-                correctStreak = 0; // Reset licznika
-            }
+            correctStreak = isCorrect ? correctStreak + 1 : 0;
             streakDisplay.textContent = `Licznik poprawnych odpowiedzi z rzędu: ${correctStreak}`;
         }
 
-        // Funkcja do kończenia gry
-        function endGame() {
+        // Funkcja kończąca grę po wygranej
+        function endGameWin() {
             const result = document.getElementById('result');
-            result.textContent = 'Koniec gry! Zła odpowiedź. Gra zostanie zrestartowana.';
-            result.style.color = 'red';
-            
-            // Automatyczny reset po 3 sekundach
-            setTimeout(restartGame, 3000);
+            result.textContent = `Wygrałeś! Udało ci się zgadnąć wszystkie ${gameMode === 'flags' ? 'flagi' : 'stolice'}!`;
+            result.style.color = 'green';
+            document.getElementById('next-btn').style.display = 'none';
         }
 
-        // Funkcja do automatycznego sprawdzania odpowiedzi przy zmianie opcji
+        // Funkcja sprawdzająca odpowiedź
         document.getElementById('country-input').addEventListener('change', function() {
             const userAnswer = this.value.trim();
             const result = document.getElementById('result');
 
-            // Sprawdź odpowiedź użytkownika
-            if (userAnswer && userAnswer.toLowerCase() === currentFlag.country.toLowerCase()) {
+            const correctAnswer = gameMode === 'flags' ? currentItem.name : currentItem.name;
+            if (userAnswer.toLowerCase() === correctAnswer.toLowerCase()) {
                 result.textContent = 'Brawo! Dobra odpowiedź.';
                 result.style.color = 'green';
-                updateStreak(true); // Zwiększ licznik poprawnych odpowiedzi
+                updateStreak(true);
                 document.getElementById('next-btn').style.display = 'block';
-            } else if (userAnswer) {
-                endGame(); // Wywołaj funkcję końca gry
+            } else {
+                result.textContent = `Zła odpowiedź! ${gameMode === 'flags' ? 'To jest flaga' : 'Stolica'}: ${correctAnswer}`;
+                result.style.color = 'red';
+                updateStreak(false);
             }
         });
 
-        // Funkcja do restartowania gry
-        function restartGame() {
+        // Funkcja restartująca bieżącą grę (licznik odpowiedzi)
+        function restartCurrentGame() {
             correctStreak = 0;
-            updateStreak(false);
-            loadNewFlag();
-            document.getElementById('restart-btn').style.display = 'none';
+            remainingItems = gameMode === 'flags' ? [...flags] : [...capitals];
+            loadNewItem();
         }
 
-        // Funkcja do przełączania motywów
+        // Funkcja powrotu do menu
+        function backToMenu() {
+            correctStreak = 0;
+            document.getElementById('game').style.display = 'none';
+            document.getElementById('menu').style.display = 'block';
+        }
+
+        // Przełączanie motywu z animacją
         function toggleTheme() {
             document.body.classList.toggle('dark-mode');
         }
 
         // Funkcja startowa gry
         document.getElementById('start-btn').addEventListener('click', function() {
-            const selectedRegion = document.getElementById('region-select').value;
-            fetchFlags(selectedRegion);
+            currentRegion = document.getElementById('region-select').value;
+            gameMode = document.getElementById('game-mode-select').value;
+            document.getElementById('game-title').textContent = gameMode === 'flags' ? 'Odgadnij flagę!' : 'Odgadnij stolicę!';
+            fetchItems(currentRegion);
             document.getElementById('menu').style.display = 'none';
             document.getElementById('game').style.display = 'block';
         });
 
-        // Inicjalizacja - pokaż menu startowe
+        // Pokaż menu startowe na początku
         document.getElementById('menu').style.display = 'block';
     </script>
 </body>
